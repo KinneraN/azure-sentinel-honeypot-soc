@@ -41,18 +41,17 @@ I then configured the Azure Monitor Agent and created a Data Collection Rule usi
 
 This established the log collection pipeline between the Windows endpoint and Microsoft Sentinel. Once configured, Windows security events generated on the honeypot became available for analysis within the Log Analytics Workspace.
 
-![Resource Group Overview](resource-group.png)
+![Resource Group Infrastructure](Resource Group Infrastructure.png)
+Figure 1. Azure Resource Group containing the Windows honeypot VM, Log Analytics Workspace, Data Collection Rule, and related Azure resources.
+
 ## 2. Security Event Analysis with KQL
 
 After configuring log collection, I tested the environment by generating failed authentication attempts against the Windows virtual machine.
 
 Windows records unsuccessful logon attempts as **Security Event ID 4625**. I used Kusto Query Language (KQL) to filter the `SecurityEvent` table for these events.
 
-```kql
-SecurityEvent
-| where EventID == 4625
-| project TimeGenerated, Computer, Account, AccountType, Activity, IpAddress
-```
+SecurityEvent | where EventID == 4625 | project TimeGenerated, Computer, Account, AccountType, Activity, IpAddress
+
 
 The query allowed me to focus specifically on failed authentication events and extract useful information such as:
 
@@ -69,11 +68,9 @@ The query confirmed that security events were successfully being collected from 
 
 More importantly, I was able to identify the external IP addresses responsible for failed authentication attempts rather than manually reviewing individual Windows event logs.
 
-**Screenshot: `kql-logs.png`**
+![KQL Log Query](KQL Log Ingestion Query.png)
 
-*Figure 2. KQL query results showing Windows Event ID 4625 failed logon attempts and their associated source IP addresses.*
-
----
+Figure 2. KQL query results showing Windows Event ID 4625 failed logon attempts and their associated source IP addresses.
 
 ## 3. Automated Threat Detection with Microsoft Sentinel
 
@@ -87,9 +84,9 @@ I associated the detection with the **Credential Access** tactic in the MITRE AT
 
 I also configured entity mapping so that important fields from the security events could be recognized as Sentinel entities:
 
-* **Account** → `Account`
-* **IP Address** → `IpAddress`
-* **Host** → `Computer`
+**Account** → `Account`
+**IP Address** → `IpAddress`
+ **Host** → `Computer`
 
 Incident creation was enabled so that activity matching the analytics rule could automatically generate a security incident for investigation.
 
@@ -101,11 +98,9 @@ Instead of manually searching through security events, Microsoft Sentinel could 
 
 This information can help a SOC analyst begin investigating an alert much more quickly.
 
-**Screenshot: `analytics-rule.png`**
+![Analytics Rule](Brute Force Attempt Detected.png)
 
-*Figure 3. Microsoft Sentinel Near-Real-Time analytics rule configured to detect suspicious authentication activity and generate incidents.*
-
----
+Figure 3. Microsoft Sentinel Near-Real-Time analytics rule configured to detect suspicious authentication activity and generate incidents.
 
 ## 4. Attacker IP Geolocation and Threat Map
 
@@ -113,20 +108,13 @@ The final part of the project focused on visualizing where the observed authenti
 
 I created a custom Microsoft Sentinel Workbook named:
 
-`Honeypot Threat Map`
+Honeypot Threat Map
 
 I used KQL to summarize failed logon attempts by source IP address and then enriched the IP addresses using Azure's `geo_info_from_ip_address()` function.
 
-```kql
-SecurityEvent
-| where EventID == 4625
-| summarize FailedLogons = count() by IpAddress, Computer
-| extend Location = geo_info_from_ip_address(IpAddress)
-| extend Latitude = toreal(Location.latitude),
-         Longitude = toreal(Location.longitude),
-         Country = tostring(Location.country)
-| where isnotempty(Latitude) and isnotempty(Longitude)
-```
+
+SecurityEvent | where EventID == 4625 | summarize FailedLogons = count() by IpAddress, Computer | extend Location = geo_info_from_ip_address(IpAddress) | extend Latitude = toreal(Location.latitude),
+Longitude = toreal(Location.longitude),  Country = tostring(Location.country) | where isnotempty(Latitude) and isnotempty(Longitude)
 
 The resulting latitude and longitude information was used in the Sentinel Workbook map visualization.
 
@@ -138,15 +126,13 @@ The workbook provided a visual representation of the geographic locations associ
 
 This helped demonstrate how raw security logs can be transformed into useful security intelligence through several stages:
 
-**Raw Events → KQL Filtering → IP Identification → Geolocation Enrichment → Visualization**
+Raw Events → KQL Filtering → IP Identification → Geolocation Enrichment → Visualization
 
 It is important to note that IP geolocation represents the estimated geographic location associated with an IP address and does not necessarily identify the physical location of an individual attacker. Attackers may also use VPNs, proxies, compromised systems, or other infrastructure.
 
-**Screenshot: `threat-map.png`**
+![Geolocation Threat Map](The Interactive Geolocation World Map.png)
 
-*Figure 4. Microsoft Sentinel Workbook displaying the geolocation of source IP addresses associated with failed authentication attempts against the honeypot.*
-
----
+Figure 4. Microsoft Sentinel Workbook displaying the geolocation of source IP addresses associated with failed authentication attempts against the honeypot.
 
 ## 5. What I Learned
 
@@ -154,7 +140,7 @@ This project helped me understand the complete workflow of a cloud SIEM rather t
 
 One of the most valuable parts of the project was seeing how endpoint activity moves through the entire monitoring pipeline:
 
-**Endpoint Activity → Log Collection → SIEM Ingestion → Querying → Detection → Incident Creation → Visualization**
+Endpoint Activity → Log Collection → SIEM Ingestion → Querying → Detection → Incident Creation → Visualization
 
 I also gained practical experience writing KQL queries and learned how Windows Event IDs can be used as the foundation for security detections.
 
@@ -162,37 +148,15 @@ Creating the analytics rule demonstrated the difference between simply collectin
 
 The threat map also helped me understand how SIEM data can be enriched and presented visually to make patterns easier to recognize.
 
----
 
 ## Security Considerations
 
-The virtual machine in this project was intentionally configured as a **honeypot for a controlled lab environment**. Exposing RDP directly to the public internet would not be an appropriate configuration for a normal production system.
+The virtual machine in this project was intentionally configured as a honeypot for a controlled lab environment. Exposing RDP directly to the public internet would not be an appropriate configuration for a normal production system.
 
 In a production Azure environment, RDP access should be significantly restricted using controls such as Network Security Groups, Azure Bastion, VPN access, Just-in-Time VM access, multifactor authentication, endpoint protection, and appropriate network segmentation.
 
 The intentionally exposed configuration used in this project was created specifically to generate and observe security telemetry.
 
----
-
-## Skills Demonstrated
-
-| Area                  | Technologies / Skills                |
-| --------------------- | ------------------------------------ |
-| Cloud Computing       | Microsoft Azure                      |
-| Cloud Networking      | Network Security Groups, TCP/IP, RDP |
-| SIEM                  | Microsoft Sentinel                   |
-| Log Management        | Log Analytics Workspace              |
-| Endpoint Telemetry    | Windows Security Events              |
-| Log Collection        | Azure Monitor Agent (AMA)            |
-| Data Ingestion        | Data Collection Rules (DCR)          |
-| Security Analysis     | Kusto Query Language (KQL)           |
-| Detection Engineering | Microsoft Sentinel Analytics Rules   |
-| Incident Management   | Sentinel Alerts and Incidents        |
-| Threat Frameworks     | MITRE ATT&CK                         |
-| Threat Enrichment     | IP Geolocation                       |
-| Visualization         | Microsoft Sentinel Workbooks         |
-
----
 
 ## Project Outcome
 
